@@ -1,0 +1,11 @@
+name = "brick-after-dark"
+main = "worker/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# Static files are inlined into worker/assets.js by `node scripts/build-assets.mjs`.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "brick-after-dark-scores"
+database_id = "a8ead3af-94a7-49dc-b293-abf855a11e4f"

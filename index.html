@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0f1a22">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Brick After Dark — a third-person endless runner through a haunted neighborhood. Dodge monsters, collect toy bricks, top the leaderboard.">
+  <title>Brick After Dark</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='12' width='26' height='14' rx='2' fill='%23d93635'/%3E%3Crect x='7' y='7' width='6' height='6' rx='2' fill='%23f45b4e'/%3E%3Crect x='19' y='7' width='6' height='6' rx='2' fill='%23f45b4e'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div>
+        <h1>Brick After Dark</h1>
+        <div class="sub">THIRD-PERSON RUNNER · <span id="hud-name">no name yet</span></div>
+      </div>
+      <nav class="menu">
+        <button class="btn slim" data-ui="name" aria-label="Change runner name">Name</button>
+        <button class="btn slim" data-ui="board">Leaderboard</button>
+        <button class="btn slim" id="btn-pause" data-act="pause" disabled>Pause &amp; Shop</button>
+      </nav>
+    </header>
+    <div class="hud" aria-live="off">
+      <span>Score <strong id="hud-score">0</strong></span>
+      <span><strong id="hud-dist">0</strong> m</span>
+      <span>Speed <strong id="hud-speed">22</strong> m/s</span>
+      <span>Run bricks <strong id="hud-run">0</strong></span>
+      <span>Wallet <strong id="hud-wallet">0</strong></span>
+      <span class="muted">Best <span id="hud-best">0</span></span>
+    </div>
+    <div id="power-status" class="status" role="status" hidden></div>
+    <div class="stage">
+      <canvas id="game" width="840" height="1160" aria-label="Behind-the-runner view of a foggy haunted neighborhood, with natural buildings and creatures and collectible toy bricks. Swipe to dodge, jump and slide."></canvas>
+      <div id="overlay" class="overlay"><div id="overlay-card" class="card"></div></div>
+    </div>
+    <div class="controls">
+      <button class="btn" data-act="left" aria-label="Move left" disabled>← Left</button>
+      <button class="btn" data-act="jump" aria-label="Jump" disabled>↑ Jump</button>
+      <button class="btn" data-act="slide" aria-label="Slide" disabled>↓ Slide</button>
+      <button class="btn" data-act="right" aria-label="Move right" disabled>Right →</button>
+    </div>
+    <details class="info">
+      <summary>How to play</summary>
+      <p>Swipe the scene or tap the buttons. Keyboard: ←/→ or A/D to dodge, ↑/W/Space to jump, ↓/S to slide. P/Esc opens Pause &amp; Shop. Resume continues the same run.</p>
+      <p>Keep changing lanes: monster pairs aim late and lunge into your path. Some rows block all three lanes — you must jump the low wall/rubble/fence/coffin or slide under the gate/pipe/sign in the traversable lane. Vans, tall crates and monsters require dodging. There is a reachable route, not always an empty lane. Each pickup adds 25 score points and earns 1 spendable brick (2 while the 30-second Double bricks power is active). Distance adds score, never currency. Run earnings enter your wallet once when the run ends.</p>
+      <p class="tiny">Start at 22 m/s with waves every 24m. Speed rises by 2 m/s after each randomly chosen 200–300m interval, up to 36 m/s. Switching tabs pauses the run and all power timers. Pause-shop purchases use only banked bricks and activate on Resume; post-run purchases activate next run. One power slot per run. Your wallet, equipped power, best score and name are saved in this browser. Each finished run submits its score once.</p>
+    </details>
+  </main>
+
+  <div id="name-dialog" class="dialog" hidden role="dialog" aria-modal="true" aria-labelledby="name-title">
+    <form id="name-form" class="card" novalidate>
+      <h2 id="name-title">Runner name</h2>
+      <p class="muted small">Shown on the leaderboard. 2–16 characters: letters, numbers, spaces, _ or -.</p>
+      <input id="name-input" name="name" maxlength="16" autocomplete="nickname" autocapitalize="words" spellcheck="false" enterkeyhint="done" placeholder="e.g. NightRunner">
+      <p id="name-error" class="err small" aria-live="polite"></p>
+      <div class="row">
+        <button type="button" class="btn" id="name-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Save name</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="board-dialog" class="dialog" hidden role="dialog" aria-modal="true" aria-labelledby="board-title">
+    <div class="card board">
+      <h2 id="board-title">Leaderboard</h2>
+      <p id="board-note" class="muted small"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Runner</th><th>Score</th><th>Distance</th></tr></thead>
+          <tbody id="board-body"></tbody>
+        </table>
+      </div>
+      <button class="btn primary" id="board-close">Close</button>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
