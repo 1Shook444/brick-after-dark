@@ -14,7 +14,7 @@ const isPower = (p) => p === 'shield' || p === 'magnet' || p === 'double';
 const powerName = (power) => POWER_SHOP.find((offer) => offer.id === power)?.name ?? 'None';
 // Independent uniform whole-meter gaps, freshly sampled for every milestone/run.
 const speedGap = () => 200 + Math.floor(Math.random() * 101);
-const fresh = () => ({ mode: 'ready', distance: 0, speed: 22, nextSpeed: speedGap(), speedFlash: 0, lane: 0, target: 0, jump: -1, slide: 0, time: 0, bricks: 0, earned: 0, banked: false, power: null, pendingPower: null, powerUsed: false, powerUntil: 0, shield: false, immuneUntil: 0, items: [], waves: [], next: 65, safe: 0, seed: 7193, reason: '', submitted: false });
+const fresh = () => ({ mode: 'ready', distance: 0, speed: 22, nextSpeed: speedGap(), speedFlash: 0, lane: 0, target: 0, jump: -1, slide: 0, time: 0, bricks: 0, earned: 0, banked: false, power: null, pendingPower: null, powerUsed: false, powerUntil: 0, shield: false, immuneUntil: 0, items: [], waves: [], next: 65, safe: 0, seed: 7193, reason: '', submitted: false, dropH: null, dropV: 0, rollQueued: false, landFx: 0 });
 const powerRemaining = (g) => Math.max(0, g.powerUntil - g.time);
 const powerActive = (g, power) => g.power === power && powerRemaining(g) > 0;
 const activatePower = (g, power) => {
@@ -61,6 +61,9 @@ const advanceSpeed = (g) => {
   }
 };
 const jumpHeight = (t) => t < 0 ? 0 : Math.sin(Math.PI * Math.min(1, t / 0.88)) * 1.55;
+// Fast drop: pressing down mid-jump replaces the jump arc with a hard fall.
+const FAST_DROP_V = 9, FAST_DROP_G = 70, SLIDE_TIME = 0.9;
+const heightOf = (g) => g.dropH !== null ? g.dropH : jumpHeight(g.jump);
 const isMonster = (kind) => kind === 'zombie' || kind === 'clown' || kind === 'alien';
 const isLow = (kind) => ['low', 'rubble', 'fence', 'coffin'].includes(kind);
 const isHigh = (kind) => ['high', 'pipe', 'sign'].includes(kind);
@@ -173,6 +176,40 @@ const PLASTICS = [
   { front: '#2ba65c', side: '#196d42', top: '#51c47b', stud: '#77da93', rim: '#c6f2c8' }
 ];
 
+// Forward roll seen from behind: the boy is tucked into a ball, and his hair,
+// backpack and sneakers tumble over the top of the ball (rotation about the
+// lateral axis) while a dashed motion ring spins. Hitbox = normal slide.
+const drawRoll = (g) => {
+  const prog = Math.max(0, Math.min(1, 1 - g.slide / SLIDE_TIME));
+  const theta = prog * Math.PI * 4; // two full forward rolls per slide
+  const r = 30, cy = -32;
+  c.save(); c.translate(0, cy); c.scale(1.06, 0.96);
+  // Spinning motion ring.
+  c.save(); c.setLineDash([10, 9]); c.lineDashOffset = -theta * 18; c.strokeStyle = '#d2f3e980'; c.lineWidth = 2.5;
+  c.beginPath(); c.arc(0, 0, r + 8, 0, Math.PI * 2); c.stroke(); c.restore();
+  // Tucked hoodie ball with a soft key light.
+  const ball = c.createRadialGradient(-10, -12, 4, 0, 0, r + 4); ball.addColorStop(0, '#45a3a5'); ball.addColorStop(0.55, '#247b82'); ball.addColorStop(1, '#0f4655');
+  c.fillStyle = ball; c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
+  // Features at angle phi around the roll axis; cos>0 faces the camera.
+  const feature = (phi, drawFn) => {
+    const a = theta + phi, depth = Math.cos(a);
+    if (depth <= 0.05) return;
+    c.save(); c.globalAlpha *= Math.min(1, depth * 1.6); c.translate(0, -Math.sin(a) * r * 0.78); c.scale(1, 0.35 + 0.65 * depth); drawFn(); c.restore();
+  };
+  // Seam band rotating around the ball (strong roll cue).
+  for (const phi of [0.5, Math.PI + 0.5]) {
+    const a = theta + phi; const y = -Math.sin(a) * r * 0.85, ry = Math.abs(Math.cos(a)) * r * 0.28 + 1;
+    c.save(); c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.clip();
+    c.strokeStyle = '#0f3d4a'; c.lineWidth = 3; c.beginPath(); c.ellipse(0, y, r * Math.sqrt(Math.max(0.05, 1 - (y / r) ** 2)), ry, 0, 0, Math.PI * 2); c.stroke(); c.restore();
+  }
+  feature(0, () => { rounded(-15, -14, 30, 28, 8, '#243a4b'); rounded(-12, -11, 24, 22, 7, '#3a5060'); line(-9, 6, 9, 6, '#b39469', 1.2); });
+  feature(Math.PI / 2, () => { for (let i = 0; i < 9; i++) { const a = i * 2.4, rr = 4 + (i % 3) * 5; circle(Math.cos(a) * rr, Math.sin(a) * rr * 0.6, 6.5, i % 3 === 0 ? '#3c322c' : '#242528'); } });
+  feature(-Math.PI / 2, () => { rounded(-21, -6, 18, 12, 5, '#c97e4e'); rounded(3, -6, 18, 12, 5, '#d38a52'); line(-18, 4, -6, 4, '#d5d6cb', 2); line(6, 4, 18, 4, '#d5d6cb', 2); });
+  feature(Math.PI, () => { rounded(-17, -8, 14, 16, 6, '#303940'); rounded(3, -8, 14, 16, 6, '#252d34'); });
+  // Hands hugging the knees stay at the sides.
+  oval(-r + 3, 4, 6, 8, '#a16e4e'); oval(r - 3, 4, 6, 8, '#a16e4e');
+  c.restore();
+};
 const draw = (g) => {
   c.setTransform(2, 0, 0, 2, 0, 0);
   const sky = c.createLinearGradient(0, 0, 0, 580); sky.addColorStop(0, '#1e2333'); sky.addColorStop(0.35, '#555264'); sky.addColorStop(0.6, '#637b80'); sky.addColorStop(1, '#1b303b');
@@ -452,15 +489,15 @@ const draw = (g) => {
     c.restore();
   }
   // Back-view runner: curly dark perm, teal hoodie, backpack, orange sneakers.
-  const p = project(g.lane, 0), jump = jumpHeight(g.jump) * 53;
+  const p = project(g.lane, 0), jump = heightOf(g) * 53;
   softShadow(p.x, 525, 29 - jump * 0.09, 9 - jump * 0.025);
   c.save(); c.translate(p.x, 522 - jump);
   if (g.shield || g.immuneUntil > g.time) {
     c.strokeStyle = g.shield ? '#8de6e1' : '#f7dda3'; c.lineWidth = 2.5;
-    c.beginPath(); c.ellipse(0, -60, 43, 82, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); if (g.slide > 0) c.ellipse(0, -31, 42, 42, 0, 0, Math.PI * 2); else c.ellipse(0, -60, 43, 82, 0, 0, Math.PI * 2); c.stroke();
   }
   if ((g.time < 2.8 || g.immuneUntil > g.time) && g.mode === 'run') c.globalAlpha = 0.65 + Math.sin(g.time * 14) * 0.2;
-  if (g.slide > 0) { c.translate(0, -10); c.rotate(-0.38); c.scale(1.16, 0.52); }
+  if (g.slide > 0) drawRoll(g); else {
   const stride = g.mode === 'run' && g.jump < 0 ? Math.sin(g.distance * 0.85) * 9 : 0;
   rounded(-19, -43, 16, 39 + stride, 6, '#252d34'); rounded(4, -43, 16, 39 - stride, 6, '#303940');
   line(-16, -34, -14, -12 + stride, '#65707770', 2); line(8, -30, 9, -12 - stride, '#65707760', 2);
@@ -487,7 +524,19 @@ const draw = (g) => {
   rounded(-13, -64, 27, 17, 4, '#2c4154'); line(-11, -63, 12, -63, '#b39469', 1.2);
   line(-14, -79, -15, -69, '#a7b7b14f', 1); line(15, -79, 15, -52, '#0e243568', 2);
   line(-12, -48, 12, -48, '#6d827e65', 1); rounded(6, -81, 5, 5, 1, '#bd965b'); circle(11, -60, 1.5, '#d0a875');
+  }
   c.restore();
+  // Fast-drop streaks and a landing dust puff.
+  if (g.dropH !== null) {
+    c.save(); c.globalAlpha = 0.55;
+    for (const x of [-22, 0, 22]) line(p.x + x, 522 - jump - 150 - Math.abs(x), p.x + x, 522 - jump - 112 - Math.abs(x) * 0.5, '#d2f3e9', 2.5);
+    c.restore();
+  }
+  if (g.landFx > 0) {
+    c.save(); c.globalAlpha = Math.min(1, g.landFx / 0.25) * 0.5; const k = 1 - g.landFx / 0.25;
+    for (const side of [-1, 1]) oval(p.x + side * (26 + k * 24), 520 - k * 6, 14 + k * 8, 6 + k * 2, '#b9c3c4');
+    c.restore();
+  }
   if (g.mode === 'run' && g.time < 3) { c.fillStyle = '#d2f3e9'; c.font = '600 14px sans-serif'; c.textAlign = 'center'; c.fillText('Find your lane. Keep moving.', 210, 330); }
   if (g.speedFlash > 0 && g.mode === 'run') {
     rect(123, 24, 174, 34, '#172d3c');
@@ -524,7 +573,7 @@ const renderOverlay = (v) => {
   let html = '';
   if (v.mode === 'ready') {
     html = `<h2>Outrun the night.</h2>
-      <p class="muted">No safe lane to camp in. Dodge late monster lunges, jump and slide through packed obstacle waves. Collect colorful toy bricks and outrun the night.</p>
+      <p class="muted">No safe lane to camp in. Dodge late monster lunges, jump and roll through packed obstacle waves. Collect colorful toy bricks and outrun the night.</p>
       ${nameLine()}
       ${v.equipped ? `<p>Equipped for this run: <strong>${esc(powerName(v.equipped))}</strong></p>` : ''}
       <p class="muted small">Wallet ${v.wallet} bricks · Best ${v.best}</p>
@@ -611,7 +660,11 @@ const action = (name) => {
   if (name === 'left') g.target = Math.max(-1, g.target - 1);
   if (name === 'right') g.target = Math.min(1, g.target + 1);
   if (name === 'jump' && g.jump < 0 && g.slide <= 0) g.jump = 0;
-  if (name === 'slide' && g.jump < 0 && g.slide <= 0) g.slide = 0.9;
+  if (name === 'slide') {
+    if (g.dropH !== null) g.rollQueued = true;                                     // already dropping: roll on landing
+    else if (g.jump >= 0) { g.dropH = jumpHeight(g.jump); g.dropV = FAST_DROP_V; g.rollQueued = false; } // fast drop
+    else if (g.slide <= 0) g.slide = SLIDE_TIME;                                    // roll on the ground
+  }
 };
 
 // ------------------------------------------------------- name + board -----
@@ -675,10 +728,20 @@ document.addEventListener('click', (e) => {
   if (ui === 'name') openName();
   else if (ui === 'board') openBoard();
   else if (act === 'start') startFlow();
+  else if (act === 'slide' && el === slideBtn && performance.now() - slidePointerAt < 1500) return; // already fired on pointerdown
   else if (act) action(act);
 });
 
 // ------------------------------------------------------------ controls -----
+// "Down held" sources, used to chain a fast drop straight into a roll.
+const held = { key: false, button: false, finger: false };
+const downHeld = () => held.key || held.button || held.finger;
+window.addEventListener('keyup', (e) => { const k = e.key.toLowerCase(); if (k === 'arrowdown' || k === 's') held.key = false; });
+window.addEventListener('blur', () => { held.key = held.button = held.finger = false; });
+const slideBtn = document.querySelector('.controls [data-act="slide"]');
+let slidePointerAt = 0;
+slideBtn.addEventListener('pointerdown', (e) => { if (slideBtn.disabled) return; e.preventDefault(); held.button = true; slidePointerAt = performance.now(); action('slide'); });
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) slideBtn.addEventListener(ev, () => { held.button = false; });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && anyDialogOpen()) { closeName(); boardDialog.hidden = true; return; }
   if (anyDialogOpen()) return;
@@ -689,18 +752,26 @@ window.addEventListener('keydown', (e) => {
   const name = mapped[k];
   if (!name || (model.mode !== 'run' && model.mode !== 'paused')) return;
   e.preventDefault();
+  if (name === 'slide') held.key = true;
   if (!e.repeat) action(name);
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && model.mode === 'run') { model.mode = 'paused'; sync(); } last = 0; });
 let gesture = null;
-canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); gesture = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ } });
+canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); gesture = { x: e.clientX, y: e.clientY, fired: false }; try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ } });
+// A downward swipe while airborne fast-drops immediately (no need to lift the
+// finger); keeping the finger down until landing chains into a roll.
+canvas.addEventListener('pointermove', (e) => {
+  if (!gesture || gesture.fired) return;
+  const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+  if (dy >= 18 && dy > Math.abs(dx) && model.mode === 'run' && model.jump >= 0 && model.dropH === null) { gesture.fired = true; held.finger = true; action('slide'); }
+});
 canvas.addEventListener('pointerup', (e) => {
-  e.preventDefault(); const start = gesture; gesture = null; if (!start) return;
+  e.preventDefault(); const start = gesture; gesture = null; held.finger = false; if (!start || start.fired) return;
   const dx = e.clientX - start.x, dy = e.clientY - start.y;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return;
   action(Math.abs(dx) > Math.abs(dy) ? dx < 0 ? 'left' : 'right' : dy < 0 ? 'jump' : 'slide');
 });
-canvas.addEventListener('pointercancel', () => { gesture = null; });
+canvas.addEventListener('pointercancel', () => { gesture = null; held.finger = false; });
 // Stop iOS rubber-banding / pull-to-refresh while swiping on the game.
 canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
@@ -714,7 +785,16 @@ const frame = (now) => {
     g.distance += g.speed * dt;
     advanceSpeed(g);
     g.lane += (g.target - g.lane) * Math.min(1, dt * 16);
-    if (g.jump >= 0) { g.jump += dt; if (g.jump >= 0.88) g.jump = -1; }
+    g.landFx = Math.max(0, g.landFx - dt);
+    if (g.dropH !== null) {
+      g.dropV += FAST_DROP_G * dt; g.dropH -= g.dropV * dt;
+      if (g.dropH <= 0) {
+        g.dropH = null; g.dropV = 0; g.jump = -1; g.landFx = 0.25;
+        // Down still held (key, Slide button or finger) or pressed again mid-drop: roll on landing.
+        if (g.rollQueued || downHeld()) g.slide = SLIDE_TIME;
+        g.rollQueued = false;
+      }
+    } else if (g.jump >= 0) { g.jump += dt; if (g.jump >= 0.88) g.jump = -1; }
     g.slide = Math.max(0, g.slide - dt);
     spawn(g);
     targetAmbushes(g);
@@ -727,10 +807,10 @@ const frame = (now) => {
         if (o.kind === 'brick') { if (inLane) collectBrick(g, o); else o.done = true; continue; }
         o.done = true;
         if (inLane) {
-          if (g.time > 2.8 && g.immuneUntil <= g.time && blocked(o.kind, jumpHeight(g.jump), g.slide > 0)) {
+          if (g.time > 2.8 && g.immuneUntil <= g.time && blocked(o.kind, heightOf(g), g.slide > 0)) {
             if (g.shield) { g.shield = false; g.power = null; g.immuneUntil = g.time + 0.6; sync(); continue; }
             g.mode = 'over';
-            g.reason = isMonster(o.kind) ? (o.kind === 'clown' ? 'The balloon clown' : o.kind === 'alien' ? 'An alien' : 'A zombie') + ' caught your lane. Switch lanes to dodge monsters — jumping and sliding will not clear them.' : isLow(o.kind) ? 'You hit a low obstacle. Jump walls, rubble, fences and coffins, or switch lanes.' : isHigh(o.kind) ? 'You hit an overhead obstacle. Slide under gates, pipes and signs, or switch lanes.' : 'That van or tall crate stack blocks the full lane. Dodge it — jumping and sliding will not clear it.';
+            g.reason = isMonster(o.kind) ? (o.kind === 'clown' ? 'The balloon clown' : o.kind === 'alien' ? 'An alien' : 'A zombie') + ' caught your lane. Switch lanes to dodge monsters — jumping and rolling will not clear them.' : isLow(o.kind) ? 'You hit a low obstacle. Jump walls, rubble, fences and coffins, or switch lanes.' : isHigh(o.kind) ? 'You hit an overhead obstacle. Roll under gates, pipes and signs, or switch lanes.' : 'That van or tall crate stack blocks the full lane. Dodge it — jumping and rolling will not clear it.';
             bankRun(g, account); saveAccount(); submitRun(g); sync(); break;
           }
         }
